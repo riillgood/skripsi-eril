@@ -48,7 +48,7 @@ distributions = {
     "Inverse Gamma":        DistSpec(stats.invgamma,       ["α", "μ", "σ"]),          # shape->alpha, loc->mu, scale->sigma
     "Inverse Gaussian":     DistSpec(stats.invgauss,       ["λ", "μ", "γ"]),        # shape invgauss->lambda, scale->mu, loc->gamma
     "Laplace":         DistSpec(stats.laplace,    ["μ","σ"]),               # loc=mu, scale=sigma
-    "Levy":                 DistSpec(stats.levy,           ["γ", "σ"]),               # loc=gamma, scale=sigma
+    "Levy":                 DistSpec(stats.levy,           ["γ", "σ"]),               # loc->gamma, scale->sigma
     "Log-Gamma":            DistSpec(stats.loggamma,       ["α", "β"]),               # c->alpha, scale->beta
     "Log-Normal":           DistSpec(stats.lognorm,        ["σ", "γ", "μ"]),         # s->sigma, loc->gamma, scale->mu
     "Logistic":        DistSpec(stats.logistic,   ["μ","σ"]),
@@ -57,7 +57,7 @@ distributions = {
     "Rayleigh":             DistSpec(stats.rayleigh,       ["γ", "σ"]),               # loc->gamma, scale->sigma
     "Wald":            DistSpec(stats.wald,       ["μ","λ","γ"]),
     "Weibull Min":          DistSpec(stats.weibull_min,    ["α", "γ", "β"]),        # c->alpha, loc->gamma, scale->beta
-    # "Weibull Max":          DistSpec(stats.weibull_max,    ["α", "γ", "β"]),        # c->alpha, loc->gamma, scale->beta
+    "Weibull Max":          DistSpec(stats.weibull_max,    ["α", "γ", "β"]),        # c->alpha, loc->gamma, scale->beta
 }
 
 def estimasi_parameter(data, dist_name):
@@ -348,46 +348,47 @@ def analisis_banyak_klaim(data: pd.DataFrame, selected_kelas=None, analysis_star
 
         # — 5) Loop distribusi —
         results = []
-        for dist_name, spec in distributions.items():
-            try:
-                sampel_train = (train_data["lama_pengajuan_klaim"].dropna().astype(float).values)
-                # a) Estimasi parameter & KS
-                params, hist_buf, param_str = estimasi_parameter(sampel_train, dist_name)
-                ks_stat, ks_pval, crit       = kolmogorov_smirnov(sampel_train, dist_name, params)
+        dist_name = "Pareto"
+        spec = distributions[dist_name]
+        try:
+            sampel_train = (train_data["lama_pengajuan_klaim"].dropna().astype(float).values)
+            # a) Estimasi parameter & KS
+            params, hist_buf, param_str = estimasi_parameter(sampel_train, dist_name)
+            ks_stat, ks_pval, crit       = kolmogorov_smirnov(sampel_train, dist_name, params)
 
-                # b) Hazard & plot
-                # 2) build sekali hazard analytic dari sampeL_train
-                frozen = spec.dist(*params[:-2], loc=params[-2], scale=params[-1])
-                hazard_fn = lambda t: frozen.pdf(t)/np.clip(1 - frozen.cdf(t), 1e-8, None)
+            # b) Hazard & plot
+            # 2) build sekali hazard analytic dari sampeL_train
+            frozen = spec.dist(*params[:-2], loc=params[-2], scale=params[-1])
+            hazard_fn = lambda t: frozen.pdf(t)/np.clip(1 - frozen.cdf(t), 1e-8, None)
 
-                hazard_buf  = plot_hazard(sampel_train, hazard_fn, dist_name)
+            hazard_buf  = plot_hazard(sampel_train, hazard_fn, dist_name)
 
-                # c) Intensity dari seluruh class_data
-                lambda_val = fungsi_intensitas(class_data, hazard_fn, date_col="tanggal_klaim_diajukan",
-                    analysis_start=analysis_start, analysis_end=analysis_end,
-                    include_saturday=False   # atau True jika Sabtu dihitung kerja
-                )
-                mean_1, var_1, std_1 = eks_var_banyak_klaim(class_data, hazard_fn, date_col="tanggal_klaim_diajukan",
-                    analysis_start=analysis_start, analysis_end=analysis_end,
-                    include_saturday=False   # atau True jika Sabtu dihitung kerja
-                )
+            # c) Intensity dari seluruh class_data
+            lambda_val = fungsi_intensitas(class_data, hazard_fn, date_col="tanggal_klaim_diajukan",
+                analysis_start=analysis_start, analysis_end=analysis_end,
+                include_saturday=False   # atau True jika Sabtu dihitung kerja
+            )
+            mean_1, var_1, std_1 = eks_var_banyak_klaim(class_data, hazard_fn, date_col="tanggal_klaim_diajukan",
+                analysis_start=analysis_start, analysis_end=analysis_end,
+                include_saturday=False   # atau True jika Sabtu dihitung kerja
+            )
 
-                results.append({
-                    "Distribusi":         dist_name,
-                    "Parameter":          param_str,
-                    "Kolmogorov-Smirnov": ks_stat,
-                    "Critical Value":     crit,
-                    "H0 Ditolak":         "Ya" if ks_stat > crit else "Tidak",
-                    "Histogram":          hist_buf,
-                    "Fungsi Hazard":      hazard_buf,
-                    "Fungsi Intensitas":  lambda_val,
-                    "Ekspektasi":         mean_1,
-                    "Variansi":           var_1,
-                    "Standar Deviasi":    std_1
-                })
+            results.append({
+                "Distribusi":         dist_name,
+                "Parameter":          param_str,
+                "Kolmogorov-Smirnov": ks_stat,
+                "Critical Value":     crit,
+                "H0 Ditolak":         "Ya" if ks_stat > crit else "Tidak",
+                "Histogram":          hist_buf,
+                "Fungsi Hazard":      hazard_buf,
+                "Fungsi Intensitas":  lambda_val,
+                "Ekspektasi":         mean_1,
+                "Variansi":           var_1,
+                "Standar Deviasi":    std_1
+            })
 
-            except Exception as e:
-                st.error(f"Gagal memproses {dist_name} di Kelas {kelas}: {e}")
+        except Exception as e:
+            st.error(f"Gagal memproses {dist_name} di Kelas {kelas}: {e}")
 
         all_results[kelas] = results
 
