@@ -2,154 +2,137 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Total Klaim", layout="wide")
-st.header("Estimasi Total Klaim BPJS di Indonesia")
+# ==============================================================================
+# KONFIGURASI DAN PEMERIKSAAN DATA
+# ==============================================================================
 
-# 1. Ambil data dari session
-if "uploaded_data" not in st.session_state:
-    st.warning("Silakan unggah file CSV atau lakukan Analisis Banyak/Besar Klaim terlebih dahulu.")
-    st.stop()
-data = st.session_state["uploaded_data"]
+st.set_page_config(page_title="Total Klaim", layout="wide")
+st.title("Estimasi Total Klaim Agregat")
+st.markdown("---")
 
 if "tabel1" not in st.session_state or "tabel2" not in st.session_state:
-    st.error("Silakan jalankan halaman Analisis Banyak Klaim dan Analisis Besar Klaim terlebih dahulu.")
+    st.error("Data analisis tidak ditemukan. Silakan jalankan halaman 'Analisis Banyak Klaim' dan 'Analisis Besar Klaim' terlebih dahulu.")
     st.stop()
 
-top5_banyak = st.session_state["tabel1"]  # dict: kelas → df_top5_banyak
-top5_besar  = st.session_state["tabel2"]  # dict: kelas → df_top5_besar
+# ==============================================================================
+# FUNGSI PERHITUNGAN
+# ==============================================================================
 
-# 2. Buat tab per kelas
-kelas_list = sorted(top5_banyak.keys())
-tabs = st.tabs([f"Kelas {k}" for k in kelas_list])
+def calculate_total_claim(pareto_row, besar_row, tipe_ks):
+    mb = pareto_row["Ekspektasi Banyak Klaim"]
+    vb = pareto_row["Standar Deviasi Banyak Klaim"]**2
+    mx = besar_row["Ekspektasi Besar Klaim"]
+    vx = besar_row["Standar Deviasi Besar Klaim"]**2
+    mean_tk = mb * mx
+    var_tk  = (vx * mb) + ((mx**2) * vb)
+    std_tk  = np.sqrt(var_tk)
+    k = 1.645
+    batas_atas = mean_tk + k * std_tk
+    return {
+        "Tipe Klasifikasi": tipe_ks,
+        "Distribusi Banyak Klaim": "Pareto",
+        "Distribusi Besar Klaim":  besar_row["Distribusi yang digunakan"],
+        "Rentang Tanggal Analisis": pareto_row["Rentang Tanggal Analisis"],
+        "Ekspektasi Total Klaim":  mean_tk,
+        "Standar Deviasi Total Klaim": std_tk,
+        "Batas Atas Premi (95%)": batas_atas,
+    }
 
-for tab, kelas in zip(tabs, kelas_list):
-    with tab:
-        df_banyak = top5_banyak[kelas].copy()
-        df_besar  = top5_besar[kelas].copy()
+# ==============================================================================
+# PROSES UTAMA
+# ==============================================================================
 
-        # Pastikan kolom numeric
-        for df in (df_banyak, df_besar):
-            for col in ["Ekspektasi", "Standar Deviasi"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
+df_banyak_dict = st.session_state["tabel1"]
+df_besar_dict  = st.session_state["tabel2"]
 
-        # — Buat salinan untuk tampilan dengan kolom fmt —
-        disp_banyak = df_banyak.copy()
-        disp_banyak["Ekspektasi"] = disp_banyak["Ekspektasi"].map(lambda x: f"{x:,.2f}")
-        disp_banyak["Standar Deviasi"]   = disp_banyak["Standar Deviasi"].map(lambda x: f"{x:,.2f}")
+all_combinations = []
+tipe_list = sorted(df_banyak_dict.keys())
 
-        disp_besar = df_besar.copy()
-        disp_besar["Ekspektasi"] = disp_besar["Ekspektasi"].map(lambda x: f"{x:,.4f}")
-        disp_besar["Standar Deviasi"]   = disp_besar["Standar Deviasi"].map(lambda x: f"{x:,.4f}")
+for tipe_ks in tipe_list:
+    df_banyak = df_banyak_dict.get(tipe_ks)
+    df_besar  = df_besar_dict.get(tipe_ks)
+    if df_banyak is not None and not df_banyak.empty and df_besar is not None and not df_besar.empty:
+        pareto_row = df_banyak.iloc[0]
+        for index, besar_row in df_besar.iterrows():
+            combination_result = calculate_total_claim(pareto_row, besar_row, tipe_ks)
+            all_combinations.append(combination_result)
 
-        # Tabel 1: Banyak Klaim
-        st.subheader(f"1. Top-5 Banyak Klaim (Kelas {kelas})")
-        st.table(disp_banyak[[
-            "Distribusi",
-            "Kolmogorov Smirnov",
-            "Ekspektasi",
-            "Standar Deviasi"
-        ]])
+# ==============================================================================
+# TABEL RINGKASAN AKHIR
+# ==============================================================================
 
-        # Tabel 2: Besar Klaim
-        st.subheader(f"2. Top-5 Besar Klaim (Kelas {kelas})")
-        st.table(disp_besar[[
-            "Distribusi",
-            "Kolmogorov Smirnov",
-            "Ekspektasi",
-            "Standar Deviasi"
-        ]])
+st.header("Total Klaim per Tipe Klasifikasi")
 
-        # Tabel 3: Kombinasi
-        combis = []
-        for _, n in df_banyak.iterrows():
-            for _, x in df_besar.iterrows():
-                mb, vb = n["Ekspektasi"], n["Standar Deviasi"]
-                mx, vx = x["Ekspektasi"], x["Standar Deviasi"]
-                mean_tk = mb * mx
-                var_tk  = vx * mb + (mx**2) * vb
-                std_tk  = np.sqrt(var_tk)
-                combis.append({
-                    "Distribusi Banyak Klaim": n["Distribusi"],
-                    "Distribusi Besar Klaim":  x["Distribusi"],
-                    "Ekspektasi Total Klaim":  mean_tk,
-                    "Variansi Total Klaim":    var_tk,
-                    "Standar Deviasi Total Klaim": std_tk
-                })
-        df_total = (
-            pd.DataFrame(combis)
-              .sort_values("Ekspektasi Total Klaim")
-              .head(5)
-              .reset_index(drop=True)
-        )
+if all_combinations:
+    df_summary = pd.DataFrame(all_combinations)
+    tipe_ks_unik = sorted(df_summary["Tipe Klasifikasi"].unique())
 
-        # Hitung batas atas Chebyshev pada α = 0.1
-        alpha = 0.10
-        k = 1 / np.sqrt(alpha)
-
-        # Tambahkan kolom UpperBound = Ekspektasi Total + k * sqrt(Standar Deviasi Total)
-        df_total["Batas Atas"] = (
-            df_total["Ekspektasi Total Klaim"]
-        + k * np.sqrt(df_total["Variansi Total Klaim"])
-        )
-
-        # Buat salinan untuk tampilan
-        disp_total = df_total.copy()
-        disp_total["Ekspektasi Total Klaim"] = disp_total["Ekspektasi Total Klaim"].map(lambda x: f"{x:,.4f}")
-        disp_total["Standar Deviasi Total Klaim"] = disp_total["Standar Deviasi Total Klaim"].map(lambda x: f"{x:,.4f}")
-        disp_total["Batas Atas"] = disp_total["Batas Atas"].map(lambda x: f"{x:,.4f}")
-
-        st.subheader(f"3. Top-5 Kombinasi Total Klaim (Kelas {kelas}) dengan Batas Atas 90%")
-        st.table(disp_total[[
+    for tipe in tipe_ks_unik:
+        st.subheader(f"Tabel Total Klaim untuk {tipe}")
+        df_tipe = df_summary[df_summary["Tipe Klasifikasi"] == tipe]
+        df_tipe_sorted = df_tipe.sort_values(by="Distribusi Besar Klaim", ascending=True).reset_index(drop=True)
+        
+        cols_ordered = [
             "Distribusi Banyak Klaim",
             "Distribusi Besar Klaim",
+            "Rentang Tanggal Analisis",
             "Ekspektasi Total Klaim",
-            "Standar Deviasi Total Klaim",
-            "Batas Atas"
-        ]])
-# try:
-#     if 'uploaded_data' in st.session_state:
-#         data = st.session_state['uploaded_data']
-#         table1 = st.session_state['tabel1']
-#         table2 = st.session_state['tabel2']
+            "Standar Deviasi Total Klaim", 
+            "Batas Atas Premi (95%)"
+        ]
+        
+        st.table(df_tipe_sorted[cols_ordered].style.format({
+            "Ekspektasi Total Klaim": "{:,.2f}",
+            "Standar Deviasi Total Klaim": "{:,.2f}",
+            "Batas Atas Premi (95%)": "{:,.2f}"
+        }))
 
-#         # Step 9: Ekspektasi, Variansi Total Klaim, dan Simpangan Baku Total Klaim
-#         mean_tk = table1['Ekspektasi Banyak Klaim'] * table2['Ekspektasi Besar Klaim']
-#         variance_tk = (table2['Variansi Besar Klaim'] * table1['Ekspektasi Banyak Klaim']) + (table2['Ekspektasi Besar Klaim']**2 * table1['Variansi Banyak Klaim'])
-#         std_dev_tk = np.sqrt(variance_tk)
+    st.header("Total Klaim Keseluruhan")
 
-#         # Step 10: Batas Atas Total Klaim
-#         confidence_level = 0.90
-#         significance_level = 1 - confidence_level
-#         k = np.sqrt(1 / significance_level)
-#         upper_bound = mean_tk + (k * std_dev_tk)
+    def calculate_grand_total(df, distribution_name):
+        if df.empty:
+            return None
+        
+        rentang_tanggal = df["Rentang Tanggal Analisis"].iloc[0]
+        total_ekspektasi = df["Ekspektasi Total Klaim"].sum()
+        total_variansi = (df["Standar Deviasi Total Klaim"] ** 2).sum()
+        total_std = np.sqrt(total_variansi)
+        total_batas_atas = total_ekspektasi + 1.645 * total_std
+        
+        return pd.DataFrame([{
+            "Distribusi yang digunakan": f"Pareto + {distribution_name}",
+            "Rentang Tanggal Analisis": rentang_tanggal,
+            "Ekspektasi Total Klaim Keseluruhan": total_ekspektasi,
+            "Standar Deviasi Total Klaim Keseluruhan": total_std,
+            "Batas Atas Total Klaim Keseluruhan (95%)": total_batas_atas
+        }])
 
-#         # Create the DataFrame
-#         table3 = {
-#             'Kelas': [1, 2, 3, 4],
-#             'Total Klaim': mean_tk,
-#             'Variansi Total Klaim': variance_tk,
-#             'Simpangan Baku Total Klaim': std_dev_tk,
-#             'Batas Atas': upper_bound
-#         }
-#         table3 = pd.DataFrame(table3)
-#         st.subheader("Estimasi Total Klaim BPJS per Kelas")
-#         st.table(table3)
+    df_2p = df_summary[df_summary["Distribusi Besar Klaim"] == "Weibull Min (2P)"]
+    df_3p = df_summary[df_summary["Distribusi Besar Klaim"] == "Weibull Min (3P)"]
 
-#         # Calculate sums outside the loop
-#         total_klaim = sum(table3['Total Klaim'])
-#         total_simpangan_baku = sum(table3['Simpangan Baku Total Klaim'])
-#         total_batas_atas = sum(table3["Batas Atas"])
+    total_2p_df = calculate_grand_total(df_2p, "Weibull Min (2P)")
+    total_3p_df = calculate_grand_total(df_3p, "Weibull Min (3P)")
 
-#         # Membuat tabel keempat
-#         table4 = pd.DataFrame([{
-#             "Total Klaim": total_klaim,
-#             "Total Simpangan Baku": total_simpangan_baku,
-#             "Total Batas Atas": total_batas_atas
-#         }])
-#         st.subheader("Estimasi Total Klaim BPJS di Indonesia")
-#         st.table(table4)
-#     else:
-#         st.warning("Silakan unggah file CSV atau lakukan analisis Pareto dan Weibull terlebih dahulu.")
-# except:
-#     st.warning("Silakan unggah file CSV atau lakukan analisis Pareto dan Weibull terlebih dahulu.")
+    if total_2p_df is not None and total_3p_df is not None:
+        final_total_df = pd.concat([total_2p_df, total_3p_df]).reset_index(drop=True)
+        st.subheader("Ringkasan Total Klaim Keseluruhan")
+        st.table(final_total_df.style.format({
+            "Ekspektasi Total Klaim Keseluruhan": "{:,.2f}",
+            "Standar Deviasi Total Klaim Keseluruhan": "{:,.2f}",
+            "Batas Atas Total Klaim Keseluruhan (95%)": "{:,.2f}"
+        }))
+
+else:
+    st.info("Tidak ada data valid yang dapat ditotalkan. Pastikan analisis di halaman sebelumnya sudah dijalankan untuk semua tipe RS.")
+
+st.markdown("---")
+
+# --- TOMBOL NAVIGASI BARU YANG SUDAH DIPERBAIKI ---
+# Menggunakan st.page_link adalah cara paling bersih dan modern untuk navigasi.
+# Ini tidak memerlukan callback dan akan berfungsi dengan benar sekarang
+# karena halaman tujuannya (03_Analisis Besar Klaim.py) sudah diperbaiki.
+
+st.page_link(
+    "pages/03_Analisis Besar Klaim.py",
+    label="Back"
+)

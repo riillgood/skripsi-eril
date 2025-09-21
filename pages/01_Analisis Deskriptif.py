@@ -19,12 +19,12 @@ target_vars = [
     ("Besar Klaim", "besar_klaim")
 ]
 
-# Loop untuk menampilkan statistik deskriptif per kelas
+# Loop untuk menampilkan statistik deskriptif per Tipe Klasifikasi
 for title, col in target_vars:
-    st.markdown(f"#### Statistik Deskriptif `{title}` per Kelas")
+    st.markdown(f"#### Statistik Deskriptif `{title}` per Tipe Klasifikasi")
     stats = (
         data
-        .groupby("kelas")[col]
+        .groupby("tipe_klasifikasi")[col]
         .agg(
             Jumlah_Data="count",
             Rata_rata="mean",
@@ -33,7 +33,7 @@ for title, col in target_vars:
             Median="median",
             Nilai_Maksimum="max",
         )
-        .rename_axis("Kelas")
+        .rename_axis("Tipe Klasifikasi")
         .reset_index()
     )
     # Ubah nama kolom

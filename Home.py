@@ -17,8 +17,9 @@ st.title("Estimasi Total Klaim BPJS di Indonesia")
 st.subheader("Panduan dan Upload File CSV")
 st.write("""
 **Tata Cara Mengunggah File CSV:**
-1. Siapkan file CSV Anda dengan kolom **`kelas`**, **`lama_pengajuan_klaim`**, dan **`besar_klaim`**.
-   - **`kelas`**: Berisi kategori data, seperti tipe klaim atau klasifikasi lainnya.
+1. Siapkan file CSV Anda dengan kolom **`tipe_klasifikasi`**, **`tanggal_klaim_diajukan`**, **`lama_pengajuan_klaim`**, dan **`besar_klaim`**.
+   - **`tipe_klasifikasi`**: Berisi kategori data, seperti tipe klaim, tipe rumah sakit atau klasifikasi lainnya.
+   - **`tanggal_klaim_diajukan`**: Berisi tanggal ketika klaim diajukan (format tanggal yang konsisten, misalnya DD-MM-YYYY).      
    - **`lama_pengajuan_klaim`**: Berisi durasi waktu pengajuan klaim dalam satuan tertentu (misalnya hari).
    - **`besar_klaim`**: Berisi nilai atau jumlah klaim.
 2. Pastikan nama kolom sesuai dengan ketentuan, **tidak boleh ada spasi atau karakter khusus**.
@@ -41,7 +42,7 @@ if uploaded_file is not None:
         data = pd.read_csv(uploaded_file)
         
         # Validasi kolom yang diperlukan
-        required_columns = {"kelas", "lama_pengajuan_klaim", "besar_klaim"}
+        required_columns = {"tipe_klasifikasi", "lama_pengajuan_klaim", "besar_klaim"}
         missing_columns = required_columns - set(data.columns)
         
         if missing_columns:

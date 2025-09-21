@@ -1,139 +1,137 @@
 import streamlit as st
 import pandas as pd
 import rumus as r
+import datetime
 
 st.set_page_config(page_title="Analisis Banyak Klaim", layout="wide")
 st.title("Estimasi Banyak Klaim")
-st.subheader("Pemodelan Waktu Antar Kedatangan")
+st.subheader("Pemodelan Waktu Antar Kedatangan (Distribusi Pareto)")
 
-#debug_mode = st.checkbox("Tampilkan log debug")
-
-# 1) Pastikan data ter-upload
+# --- Pastikan data ada ---
 if 'uploaded_data' not in st.session_state:
     st.warning("Silakan unggah file CSV terlebih dahulu.")
     st.stop()
+
 data = st.session_state['uploaded_data']
 data["tanggal_klaim_diajukan"] = pd.to_datetime(
     data["tanggal_klaim_diajukan"], errors="coerce"
 )
 
-# — Sidebar: input tanggal dulu —
+# --- Sidebar Rentang Tanggal ---
 st.sidebar.markdown("### Rentang Tanggal Analisis")
-# — Sidebar: Rentang Tanggal Analisis (persist & selalu tampil) —
 min_date = data["tanggal_klaim_diajukan"].min().date()
-max_date = data["tanggal_klaim_diajukan"].max().date()
+#max_date = data["tanggal_klaim_diajukan"].max().date()
+default_dates = st.session_state.get("analysis_dates", (min_date, datetime.date.today()))
 
-# Ambil value dari session jika sudah ada, atau default ke (min,max)
-default_dates = st.session_state.get("analysis_dates", (min_date, max_date))
+
 tanggal = st.sidebar.date_input(
     "Masukkan tanggal yang akan dianalisis:",
     value=default_dates,
     min_value=min_date,
-    max_value=max_date,
-    key="date_input"  # beri key supaya streamlit simpan state
+    #max_value=max_date,
+    key="date_input"
 )
 
-# Validasi: paksa user memilih rentang non-default
-if not (isinstance(tanggal, (list, tuple)) and len(tanggal)==2):
-    st.warning("Silakan pilih rentang tanggal yang lengkap—dua tanggal, bukan satu.")
+if not (isinstance(tanggal, (list, tuple)) and len(tanggal) == 2):
+    st.warning("Silakan pilih rentang tanggal yang lengkap (dua tanggal).")
     st.stop()
-if tanggal == (min_date, max_date):
-    st.info("Default tanggal masih dari data ter‑upload. Silakan ubah rentang di sidebar untuk menjalankan analisis.")
+if tanggal == (min_date, datetime.date.today()):
+    st.info("Default tanggal masih dari data ter-upload. Silakan ubah rentang di sidebar untuk menjalankan analisis.")
     st.stop()
 
-# Simpan ke session (disimpan otomatis karena `key="date_input"` tetapi kita juga simpan eksplisit)
 st.session_state.analysis_dates = tanggal
 start_date, end_date = tanggal
 
-# 1) Inisialisasi kelas_list & idx_banyak
-if 'kelas_list' not in st.session_state:
-    st.session_state.kelas_list = sorted(data['kelas'].unique())
+# --- Navigasi antar tipe rumah sakit ---
+if 'tipe_list' not in st.session_state:
+    st.session_state.tipe_list = sorted(data['tipe_klasifikasi'].unique())
 if 'idx_banyak' not in st.session_state:
     st.session_state.idx_banyak = 0
 
-kelas_list = st.session_state.kelas_list
-last       = len(kelas_list) - 1
+tipe_list = st.session_state.tipe_list
 idx_banyak = st.session_state.idx_banyak
+last = len(tipe_list) - 1
 
-# 2) Sentinel check (navigasi) — **harus** sebelum pakai idx_banyak
 if idx_banyak == -1:
-    # Back dari kelas pertama → Analisis Deskriptif
     st.session_state.idx_banyak = 0
     st.switch_page("pages/01_Analisis Deskriptif.py")
 elif idx_banyak == last + 1:
-    # Next setelah kelas terakhir → Analisis Besar Klaim
     st.session_state.idx_banyak = last
-    st.session_state.idx_besar  = 0
+    st.session_state.idx_besar = 0
     st.switch_page("pages/03_Analisis Besar Klaim.py")
 
-# 3) Sekarang idx_banyak pasti 0…last, ambil kelas:
-selected_kelas = kelas_list[idx_banyak]
-st.sidebar.markdown(f"### Analisis Banyak Klaim — Kelas {selected_kelas}")
+selected_tipe = tipe_list[idx_banyak]
+st.sidebar.markdown(f"### Analisis Banyak Klaim — {selected_tipe}")
 
-# 3) Hitung hasil
-results_dict = r.analisis_banyak_klaim(data, selected_kelas=selected_kelas, analysis_start=start_date, analysis_end=end_date)
+# --- Jalankan analisis Pareto saja ---
+all_results = r.analisis_banyak_klaim( # Ganti nama variabel agar lebih jelas
+    data, selected_tipe=selected_tipe,
+    analysis_start=start_date, analysis_end=end_date
+)
 
-# 4) Ambil hasil untuk kelas yang dipilih
-results = results_dict.get(selected_kelas, [])
-if not results:
-    st.warning(f"Tidak ada hasil untuk Kelas {selected_kelas}.")
-    st.stop()
+# --- Tampilkan hasil ---
+if selected_tipe in all_results:
+    # Ambil dictionary hasil
+    result = all_results[selected_tipe][0]
 
-# 5) Tampilkan histogram **sekali**
-st.subheader(f"Histogram Estimasi Parameter untuk Kelas {selected_kelas}")
-for r in results:
-    st.markdown(f"**Distribusi {r['Distribusi']}**")
-    st.image(r["Histogram"], use_container_width=True)
+    # 1. Tampilkan plot utama (Fungsi Hazard & Histogram)
+    st.subheader(f"Ringkasan Hasil Estimasi Parameter Distribusi Pareto dari Waktu Antar Kedatangan untuk {selected_tipe}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Histogram**")
+        st.image(result.get("Histogram"), use_container_width=True)
+    with col2:
+        st.markdown("**Fungsi Hazard**")
+        st.image(result.get("Fungsi Hazard"), use_container_width=True)
 
-# 6) Tampilkan tabel Kolmogorov–Smirnov
-st.subheader(f"Nilai Kolmogorov–Smirnov Kelas {selected_kelas}")
-sorted_results = sorted(results, key=lambda x: x['Kolmogorov-Smirnov'])
-df_results = pd.DataFrame({
-        'Distribusi': [r['Distribusi'] for r in sorted_results],
-        'Kolmogorov Smirnov': [f"{r['Kolmogorov-Smirnov']:.4f}" for r in sorted_results],
-        'Fungsi Intensitas': [r['Fungsi Intensitas'] for r in sorted_results],
-        'Ekspektasi': [r['Ekspektasi'] for r in sorted_results],
-        'Standar Deviasi': [r['Standar Deviasi'] for r in sorted_results]
-        })
-st.table(df_results)
+    # 2. Tampilkan tabel ringkasan utama
+    # Format rentang tanggal menjadi string untuk ditampilkan
+    rentang_tanggal_str = f"{start_date.strftime('%Y/%m/%d')} - {end_date.strftime('%Y/%m/%d')}"
 
-# 7) Expander hanya berisi teks summary, tanpa plot
-st.subheader(f"Detail Ringkasan untuk Kelas {selected_kelas}")
-for r in results:
-    with st.expander(r["Distribusi"]):
-        st.image(r["Fungsi Hazard"], use_container_width=True)
-        st.write(f"**Parameter:** {r['Parameter']}")
-        st.write(f"**Kolmogorov-Smirnov:** {r['Kolmogorov-Smirnov']:.4f}")
-        st.write(f"**Critical Value:** {r['Critical Value']:.4f}")
-        st.write(f"**H0 Ditolak:** {r['H0 Ditolak']}")
+    df_summary = pd.DataFrame([{
+        'Analisis': 'Banyak Klaim',
+        'Rentang Tanggal Analisis': rentang_tanggal_str,  # <-- Kolom baru ditambahkan di sini
+        'Parameter Proses Poisson': result.get('Fungsi Intensitas'),
+        'Ekspektasi Banyak Klaim': result.get('Ekspektasi'),
+        'Standar Deviasi Banyak Klaim': result.get('Standar Deviasi')
+    }])
+    
+    # 3. Buat expander untuk detail tambahan
+    with st.expander("Detail untuk Distribusi Pareto"):
+        st.write(f"**Parameter:** {result.get('Parameter')}")
+        st.write(f"**Kolmogorov Smirnov:** {result.get('Kolmogorov-Smirnov'):.4f}")
+        st.write(f"**Critical Value:** {result.get('Critical Value'):.4f}")
+        st.write(f"**H0 Ditolak:** {result.get('H0 Ditolak')}")
 
-# 8) Tabel 5 Hasil Terbaik Setiap Kelas — simpan per kelas
-df_top5_banyak = df_results.head(5).reset_index(drop=True)
+    st.subheader(f"Ringkasan Hasil Estimasi Banyak Klaim untuk {selected_tipe}")
+    st.table(df_summary.style.format({
+        'Parameter Proses Poisson': '{:,.4f}',
+        'Ekspektasi Banyak Klaim': '{:,.4f}',
+        'Standar Deviasi Banyak Klaim': '{:,.4f}'
+    }))
 
-# Pastikan tabel1 adalah dict
-if 'tabel1' not in st.session_state or not isinstance(st.session_state['tabel1'], dict):
-    st.session_state['tabel1'] = {}
+    # --- PERBAIKAN: Simpan hasil ke session state untuk halaman berikutnya ---
+    if 'tabel1' not in st.session_state or not isinstance(st.session_state.tabel1, dict):
+        st.session_state.tabel1 = {}
+    st.session_state.tabel1[selected_tipe] = df_summary # Simpan summary Pareto
 
-st.session_state['tabel1'][selected_kelas] = df_top5_banyak
+else:
+    st.warning(f"Analisis untuk '{selected_tipe}' tidak dapat diselesaikan atau tidak menghasilkan data.")
 
-st.subheader(f"5 Distribusi Dengan Hasil Terbaik (Kelas {selected_kelas})")
-st.table(df_top5_banyak)
-
-# 4) Tombol navigasi:
+# --- Tombol navigasi (tidak perlu diubah) ---
 def go_back():
-    st.session_state.idx_banyak = idx_banyak - 1
+    st.session_state.idx_banyak = st.session_state.idx_banyak - 1
 
 def go_next():
-    st.session_state.idx_banyak = idx_banyak + 1
+    st.session_state.idx_banyak = st.session_state.idx_banyak + 1
 
 col1, col2 = st.columns(2)
 col1.button("Back", on_click=go_back, key="back_banyak")
 col2.button("Next", on_click=go_next, key="next_banyak")
 
-# **Stop** eksekusi agar page tidak melanjutkan render kedua tombol
 st.stop()
 
-# # 8) Tabel 5 Hasil Terbaik Setiap Kelas
+# # 8) Tabel 5 Hasil Terbaik Setiap tipe
 # df_top5_banyak = df_results.head(5).reset_index(drop=True)
 # st.session_state['tabel1'] = df_top5_banyak
 # st.subheader("5 Distribusi Dengan Hasil Terbaik")
